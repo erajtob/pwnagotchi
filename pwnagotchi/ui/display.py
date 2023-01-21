@@ -37,9 +37,6 @@ class Display(View):
     def is_waveshare_v2(self):
         return self._implementation.name == 'waveshare_2'
 
-    def is_waveshare_v3(self):
-        return self._implementation.name == 'waveshare_3'
-
     def is_waveshare27inch(self):
         return self._implementation.name == 'waveshare27inch'
 
@@ -48,6 +45,9 @@ class Display(View):
 
     def is_oledhat(self):
         return self._implementation.name == 'oledhat'
+
+    def is_oledhati2c(self):
+        return self._implementation.name == 'oledhati2c'
 
     def is_lcdhat(self):
         return self._implementation.name == 'lcdhat'
@@ -72,9 +72,6 @@ class Display(View):
     
     def is_waveshare213inb_v4(self):
         return self._implementation.name == 'waveshare213inb_v4'
-
-    def is_waveshare35lcd(self):
-        return self._implementation.name == 'waveshare35lcd'
 
     def is_spotpear24inch(self):
         return self._implementation.name == 'spotpear24inch'
