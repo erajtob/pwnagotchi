@@ -1,23 +1,28 @@
 from . import SSD1306
-from . import config
 
-disp = SSD1306.SSD1306()
+RST = 24
+
+disp = SSD1306.SSD1306_128_64(rst=RST, i2c_bus=1, i2c_address=0x3C)
 
 class EPD(object):
 
-    def __init__(self):
-        self.reset_pin = config.RST_PIN
-        self.dc_pin = config.DC_PIN
-        self.busy_pin = config.BUSY_PIN
-        self.cs_pin = config.CS_PIN
-        self.width = disp.width
-        self.height = disp.height
+    def __init__(self, rst=RST, i2c_bus=None, i2c_address=0x3c):
+        self.width = 128
+        self.height = 64
+        if i2c_bus is None:
+            self.i2c_bus = 1
+        else:
+            self.i2c_bus = i2c_bus
+        self.i2c_address = i2c_address
+        self.disp = disp
 
     def init(self):
-        disp.Init()
+        self.disp.begin()
 
     def Clear(self):
-        disp.clear()
+        self.disp.clear()
+        self.disp.display()
 
     def display(self, image):
-        disp.ShowImage(disp.getbuffer(image))
+        self.disp.image(image)
+        self.disp.display()

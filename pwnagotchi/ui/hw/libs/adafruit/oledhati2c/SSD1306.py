@@ -1,12 +1,10 @@
-from . import config
+import logging
 import RPi.GPIO as GPIO
 import time
+from smbus import SMBus
 
-Device_SPI = config.Device_SPI
-Device_I2C = config.Device_I2C
-
-LCD_WIDTH   = 128 #LCD width
-LCD_HEIGHT  = 64  #LCD height
+width = 128 #LCD width
+height = 64  #LCD height
 
 # Constants
 SSD1306_I2C_ADDRESS = 0x3C    # 011110+SA0+RW - 0x3C or 0x3D
@@ -45,35 +43,150 @@ SSD1306_LEFT_HORIZONTAL_SCROLL = 0x27
 SSD1306_VERTICAL_AND_RIGHT_HORIZONTAL_SCROLL = 0x29
 SSD1306_VERTICAL_AND_LEFT_HORIZONTAL_SCROLL = 0x2A
 
-class SSD1306(object):
-    def __init__(self):
-        self.width = LCD_WIDTH
-        self.height = LCD_HEIGHT
-        #Initialize DC RST pin
-        self._dc = config.DC_PIN
-        self._rst = config.RST_PIN
-        self._bl = config.BL_PIN
-        self.Device = config.Device
-        self._vccstate = SSD1306_SWITCHCAPVCC
-
-
-    """    Write register address and data     """
-    def command(self, cmd):
-        if(self.Device == Device_SPI):
-            GPIO.output(self._dc, GPIO.LOW)
-            config.spi_writebyte([cmd])
+class SSD1306Base(object):
+    def __init__(self, width, height, rst, i2c_bus=None, i2c_address=SSD1306_I2C_ADDRESS, i2c=None):
+        self._i2c = None
+        self.width = width
+        self.height = height
+        self._pages = height//8
+        self._buffer = [0]*(width*self._pages)
+        if i2c_bus is None:
+            self._i2c = SMBus(1)
         else:
-            config.i2c_writebyte(0x00, cmd)
+            self._i2c = SMBus(i2c_bus)
+        self._gpio = GPIO
+        self._gpio.setmode(GPIO.BCM)
+        self._gpio.setwarnings(False)
+        # Setup reset pin.
+        self._rst = rst
+        if not self._rst is None:
+            self._gpio.setup(self._rst, GPIO.OUT)   
 
-    # def data(self, val):
-        # GPIO.output(self._dc, GPIO.HIGH)
-        # config.spi_writebyte([val]) 
+    def _initialize(self):
+        raise NotImplementedError
 
-    def Init(self):
-        if (config.module_init() != 0):
-            return -1
-        """Initialize display"""
+    def write8(self, register, value):
+        """Write an 8-bit value to the specified register."""
+        value = value & 0xFF
+        self._i2c.write_byte_data(SSD1306_I2C_ADDRESS, register, value)
+
+    def command(self, c):
+        """Send command byte to display."""
+        # I2C write.
+        control = 0x00   # Co = 0, DC = 0
+        self.write8(control, c)
+        time.sleep(0.01)
+
+    def data(self, c):
+        """Send byte of data to display."""
+        # I2C write.
+        control = 0x40   # Co = 0, DC = 0
+        self.write8(control, c)
+        time.sleep(0.01)
+
+    def begin(self, vccstate=SSD1306_SWITCHCAPVCC):
+        """Initialize display."""
+        # Save vcc state.
+        self._vccstate = vccstate
+        # Reset and initialize display.
         self.reset()
+        self._initialize()
+        # Turn on the display.
+        self.command(SSD1306_DISPLAYON)
+
+    def reset(self):
+        """Reset the display."""
+        if self._rst is None:
+            return
+        # Set reset high for a millisecond.
+        GPIO.output(self._rst, GPIO.HIGH)
+        time.sleep(0.001)
+        # Set reset low for 10 milliseconds.
+        GPIO.output(self._rst, GPIO.LOW)
+        time.sleep(0.010)
+        # Set reset high again.
+        GPIO.output(self._rst, GPIO.HIGH)
+
+    def writeList(self, register, data):
+        """Write bytes to the specified register."""
+        self._i2c.write_i2c_block_data(SSD1306_I2C_ADDRESS, register, data)
+
+    def display(self):
+        """Write display buffer to physical display."""
+        self.command(SSD1306_COLUMNADDR)
+        self.command(0)              # Column start address. (0 = reset)
+        self.command(self.width-1)   # Column end address.
+        self.command(SSD1306_PAGEADDR)
+        self.command(0)              # Page start address. (0 = reset)
+        self.command(self._pages-1)  # Page end address.
+        # Write buffer data.
+        for i in range(0, len(self._buffer), 16):
+            control = 0x40   # Co = 0, DC = 0
+            # data = bytearray(len(self._buffer[i:i+16]) + 1)
+            # data[0] = control & 0xFF
+            # data[1:] = self._buffer[i:i+16]
+            self.writeList(control, self._buffer[i:i+16])
+
+    def image(self, image):
+        """Set buffer to value of Python Imaging Library image.  The image should
+        be in 1 bit mode and a size equal to the display size.
+        """
+        if image.mode != '1':
+            raise ValueError('Image must be in mode 1.')
+        imwidth, imheight = image.size
+        if imwidth != self.width or imheight != self.height:
+            raise ValueError('Image must be same dimensions as display ({0}x{1}).' \
+                .format(self.width, self.height))
+        # Grab all the pixels from the image, faster than getpixel.
+        pix = image.load()
+        # Iterate through the memory pages
+        index = 0
+        for page in range(self._pages):
+            # Iterate through all x axis columns.
+            for x in range(self.width):
+                # Set the bits for the column of pixels at the current position.
+                bits = 0
+                # Don't use range here as it's a bit slow
+                for bit in [0, 1, 2, 3, 4, 5, 6, 7]:
+                    bits = bits << 1
+                    bits |= 0 if pix[(x, page*8+7-bit)] == 0 else 1
+                # Update buffer byte and increment to next byte.
+                self._buffer[index] = bits
+                index += 1
+
+    def clear(self):
+        """Clear contents of image buffer."""
+        self._buffer = [0]*(self.width*self._pages)
+
+    def set_contrast(self, contrast):
+        """Sets the contrast of the display.  Contrast should be a value between
+        0 and 255."""
+        if contrast < 0 or contrast > 255:
+            raise ValueError('Contrast must be a value from 0 to 255 (inclusive).')
+        self.command(SSD1306_SETCONTRAST)
+        self.command(contrast)
+
+    def dim(self, dim):
+        """Adjusts contrast to dim the display if dim is True, otherwise sets the
+        contrast to normal brightness if dim is False.
+        """
+        # Assume dim display.
+        contrast = 0
+        # Adjust contrast based on VCC if not dimming.
+        if not dim:
+            if self._vccstate == SSD1306_EXTERNALVCC:
+                contrast = 0x9F
+            else:
+                contrast = 0xCF
+            self.set_contrast(contrast)
+
+class SSD1306_128_64(SSD1306Base):
+    def __init__(self, rst, i2c_bus=None, i2c_address=SSD1306_I2C_ADDRESS,
+                 i2c=None):
+        # Call base class constructor.
+        super(SSD1306_128_64, self).__init__(128, 64, rst, i2c_bus, i2c_address, i2c)
+
+    def _initialize(self):
         # 128x64 pixel specific initialization.
         self.command(SSD1306_DISPLAYOFF)                    # 0xAE
         self.command(SSD1306_SETDISPLAYCLOCKDIV)            # 0xD5
@@ -108,76 +221,3 @@ class SSD1306(object):
         self.command(0x40)
         self.command(SSD1306_DISPLAYALLON_RESUME)           # 0xA4
         self.command(SSD1306_NORMALDISPLAY)                 # 0xA6
-        time.sleep(0.1)
-        self.command(0xAF);#--turn on oled panel
-
-
-    def reset(self):
-        """Reset the display"""
-        GPIO.output(self._rst,GPIO.HIGH)
-        time.sleep(0.1)
-        GPIO.output(self._rst,GPIO.LOW)
-        time.sleep(0.1)
-        GPIO.output(self._rst,GPIO.HIGH)
-        time.sleep(0.1)
-
-    def getbuffer(self, image):
-        # print "bufsiz = ",(self.width/8) * self.height
-        buf = [0xFF] * ((self.width//8) * self.height)
-        image_monocolor = image.convert('1')
-        imwidth, imheight = image_monocolor.size
-        pixels = image_monocolor.load()
-        # print "imwidth = %d, imheight = %d",imwidth,imheight
-        if(imwidth == self.width and imheight == self.height):
-            #print ("Vertical")
-            for y in range(imheight):
-                for x in range(imwidth):
-                    # Set the bits for the column of pixels at the current position.
-                    if pixels[x, y] == 0:
-                        buf[x + (y // 8) * self.width] &= ~(1 << (y % 8))
-                        # print x,y,x + (y * self.width)/8,buf[(x + y * self.width) / 8]
-
-        elif(imwidth == self.height and imheight == self.width):
-            #print ("Vertical")
-            for y in range(imheight):
-                for x in range(imwidth):
-                    newx = y
-                    newy = self.height - x - 1
-                    if pixels[x, y] == 0:
-                        buf[(newx + (newy // 8 )*self.width) ] &= ~(1 << (y % 8))
-        return buf
-
-
-    # def ShowImage(self,Image):
-        # self.SetWindows()
-        # GPIO.output(self._dc, GPIO.HIGH);
-        # for i in range(0,self.width * self.height/8):
-            # config.spi_writebyte([~Image[i]])
-
-    def ShowImage(self, pBuf):
-        for page in range(0,8):
-            # set page address #
-            self.command(SSD1306_PAGEADDR + page);
-            # set low column address #
-            self.command(SSD1306_SETLOWCOLUMN);
-            # set high column address #
-            self.command(SSD1306_SETHIGHCOLUMN);
-            # write data #
-            time.sleep(0.01)
-            if(self.Device == Device_SPI):
-                GPIO.output(self._dc, GPIO.HIGH);
-            for i in range(0,self.width):#for(int i=0;i<self.width; i++)
-                if(self.Device == Device_SPI):
-                    config.spi_writebyte([~pBuf[i + self.width * page]]);
-                else :
-                    config.i2c_writebyte(0x40, ~pBuf[i + self.width * page])
-
-
-
-
-
-    def clear(self):
-        """Clear contents of image buffer"""
-        _buffer = [0xff]*(self.width * self.height//8)
-        self.ShowImage(_buffer)
-            #print "%d",_buffer[i:i+4096]
