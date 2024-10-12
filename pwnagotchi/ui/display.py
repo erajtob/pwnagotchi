@@ -46,8 +46,8 @@ class Display(View):
     def is_oledhat(self):
         return self._implementation.name == 'oledhat'
 
-    def is_oledhati2c(self):
-        return self._implementation.name == 'oledhati2c'
+    def is_adafruitssd1306i2c(self):
+        return self._implementation.name == 'adafruitssd1306i2c'
 
     def is_lcdhat(self):
         return self._implementation.name == 'lcdhat'

@@ -1,8 +1,12 @@
-## Adaption of the Python driver for 0.96" 128*64 i2c OLED displays, 
-## based on the Adafruit driver without using any Adafruit dependency libraries, 
-## instead it's using the usual smbus and RPi.GPIO
-## by Erajtob (github.com/erajtob)
-## --
+# Adaption of the Python driver for 0.96" 128*64 i2c OLED displays,
+# based on the Adafruit driver without using any Adafruit dependency libraries,
+# instead it's using the usual smbus and RPi.GPIO
+# Adaptation made by: MD Raqibul Islam (github.com/erajtob)
+#
+# --
+# Copyright (c) 2014 Adafruit Industries
+# Author: Tony DiCola
+#
 # ******************************************************************************/
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -85,7 +89,7 @@ class SSD1306Base(object):
         # Setup reset pin.
         self._rst = rst
         if not self._rst is None:
-            self._gpio.setup(self._rst, GPIO.OUT)   
+            self._gpio.setup(self._rst, GPIO.OUT)
 
     def _initialize(self):
         raise NotImplementedError

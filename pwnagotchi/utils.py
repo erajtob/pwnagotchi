@@ -242,8 +242,8 @@ def load_config(args):
     elif config['ui']['display']['type'] in ('oledhat',):
         config['ui']['display']['type'] = 'oledhat'
 
-    elif config['ui']['display']['type'] in ('oledhati2c',):
-        config['ui']['display']['type'] = 'oledhati2c'
+    elif config['ui']['display']['type'] in ('adafruitssd1306i2c',):
+        config['ui']['display']['type'] = 'adafruitssd1306i2c'
 
     elif config['ui']['display']['type'] in ('ws_1', 'ws1', 'waveshare_1', 'waveshare1'):
         config['ui']['display']['type'] = 'waveshare_1'

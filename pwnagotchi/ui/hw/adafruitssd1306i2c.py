@@ -4,9 +4,9 @@ import pwnagotchi.ui.fonts as fonts
 from pwnagotchi.ui.hw.base import DisplayImpl
 
 
-class OledHati2c(DisplayImpl):
+class AdafruitSSD1306i2c(DisplayImpl):
     def __init__(self, config):
-        super(OledHati2c, self).__init__(config, 'oledhati2c')
+        super(AdafruitSSD1306i2c, self).__init__(config, 'adafruitssd1306i2c')
         self._display = None
 
     def layout(self):
@@ -32,9 +32,9 @@ class OledHati2c(DisplayImpl):
         return self._layout
 
     def initialize(self):
-        logging.info("initializing oledhati2c display")
-        from pwnagotchi.ui.hw.libs.adafruit.oledhati2c.epd import EPD
-        logging.info("EPD loaded")        
+        logging.info("initializing adafruitssd1306i2c display")
+        from pwnagotchi.ui.hw.libs.adafruit.adafruitssd1306i2c.epd import EPD
+        logging.info("EPD loaded")
         self._display = EPD()
         self._display.init()
         self._display.Clear()
